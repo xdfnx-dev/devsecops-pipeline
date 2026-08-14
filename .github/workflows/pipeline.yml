@@ -1,0 +1,45 @@
+name: DevSecOps pipeline
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  id-token: write
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m unittest discover -s tests -v
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: semgrep/semgrep-action@v1
+        with: {config: p/python}
+      - uses: gitleaks/gitleaks-action@v2
+        env: {GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'}
+      - uses: bridgecrewio/checkov-action@v12
+        with: {directory: k8s, framework: kubernetes}
+  image:
+    if: github.event_name == 'push'
+    needs: [unit-tests, static-analysis]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: {registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}'}
+      - uses: docker/build-push-action@v6
+        with: {push: true, tags: 'ghcr.io/${{ github.repository }}:${{ github.sha }}'}
+      - uses: sigstore/cosign-installer@v3.8.1
+      - run: cosign sign --yes ghcr.io/${{ github.repository }}:${{ github.sha }}
+      - uses: aquasecurity/trivy-action@0.28.0
+        with: {image-ref: 'ghcr.io/${{ github.repository }}:${{ github.sha }}', format: sarif, output: trivy.sarif, severity: 'CRITICAL,HIGH', ignore-unfixed: true}
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: {sarif_file: trivy.sarif}
