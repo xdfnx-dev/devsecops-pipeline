@@ -19,7 +19,8 @@ spec:
     metadata: {labels: {app: secure-demo-api}}
     spec:
       serviceAccountName: secure-demo-api
-      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: api
           image: ghcr.io/OWNER/devsecops-pipeline:latest
